@@ -105,7 +105,7 @@ void thread_sleep(int64_t ticks, int64_t start){
 			do_schedule(THREAD_BLOCKED);
 		}
 		else{
-			for(e = list_begin(&sleep_list); e!= list_end(&sleep_list); e = list_next(e)){
+			for(e = list_front(&sleep_list); e!= list_end(&sleep_list); e = list_next(e)){
 				struct thread *sleep_thread = list_entry(e, struct thread, elem);
 				if(curr->wake_time < sleep_thread->wake_time){
 					list_insert(e, &curr->elem);
@@ -124,7 +124,6 @@ void thread_sleep(int64_t ticks, int64_t start){
 void thread_wake(int64_t ticks){
 	enum intr_level old_level;
 	struct list_elem *e;
-	struct check_thread *t;
 
 	old_level = intr_disable();
 
@@ -132,17 +131,21 @@ void thread_wake(int64_t ticks){
 		return;
 	}
 
-	for(e=list_begin(&sleep_list); e != list_end(&sleep_list); e=list_next(e)){
+	for(e=list_front(&sleep_list); e != list_end(&sleep_list); e=list_next(e)){
 
 		struct thread *front = list_entry(e, struct thread, elem);
 		
 		if(ticks < front->wake_time){
 			break;
+			//continue;
 		}
 
 		struct thread *awake_thread = list_entry(e, struct thread, elem);
+		// list_remove(e);
+		// thread_unblock(awake_thread);
 		list_remove(e);
-		thread_unblock(awake_thread);
+		awake_thread->status = THREAD_READY;
+		list_push_back(&ready_list, &awake_thread->elem);
 	}
 	intr_set_level(old_level);	
 }
