@@ -40,6 +40,9 @@ static struct lock tid_lock;
 /* Thread destruction requests */
 static struct list destruction_req;
 
+// sleep 된 thread 를 저장하는 자료구조
+static struct list sleep_list;
+
 /* Statistics. */
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
@@ -109,6 +112,9 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	
+	// 전역 스레드 초기화
+	list_init (&sleep_list);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -291,6 +297,112 @@ thread_exit (void) {
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
 }
+
+// 실행 중인 스레드를 슬립으로 만듦
+void thread_sleep(int64_t ticks){
+ 	struct thread *curr= thread_current();
+	enum intr_level old_level;
+
+
+	ASSERT (!intr_context ());
+	old_level = intr_disable ();
+
+	if (curr != idle_thread){
+		curr->wakeup_tick=ticks;
+		list_push_back(&sleep_list, &curr->elem);
+		do_schedule (THREAD_BLOCKED);
+	}
+
+	update_next_tick_to_awake(ticks);
+
+	intr_set_level (old_level);
+}
+
+// 슬립큐에서 깨워야 할 스레드를 깨움
+void thread_awake(int64_t ticks){
+
+	int64_t init_awake_thread_name;	
+	int64_t min_tick=get_next_tick_to_awake();
+	
+	enum intr_level old_level;
+	struct thread *awaked_thread;
+
+	if (ticks>=min_tick){
+
+		if (!list_empty(&sleep_list)){
+			
+			struct list_elem *look_sleep_elem=list_front(&sleep_list);
+
+			while(look_sleep_elem!=list_end(&sleep_list))
+			{	
+				awaked_thread=
+				list_entry (look_sleep_elem, struct thread, elem);
+
+				if (ticks>=awaked_thread->wakeup_tick){
+					
+					ASSERT (is_thread (awaked_thread));
+					old_level = intr_disable ();
+					ASSERT (awaked_thread->status == THREAD_BLOCKED);
+					look_sleep_elem=list_remove(look_sleep_elem);
+					list_push_back (&ready_list, &awaked_thread->elem);
+
+					awaked_thread->status = THREAD_READY;
+					intr_set_level (old_level);
+				}
+				else
+					look_sleep_elem=list_next(look_sleep_elem);
+					
+			}
+		}
+	}
+
+}
+	
+
+
+// 깨워야 할 최소 틱의 값을 저장
+void update_next_tick_to_awake(int64_t ticks){
+
+	int64_t init_awake_thread_name;
+
+	struct thread *check_thread;
+
+	next_tick_to_awake=ticks;
+
+	if (!list_empty(&sleep_list)){
+		
+		struct list_elem *look_sleep_elem=list_front(&sleep_list);
+
+		check_thread=
+		list_entry (look_sleep_elem, struct thread, elem);
+
+		if (next_tick_to_awake>check_thread->wakeup_tick)
+			next_tick_to_awake=check_thread->wakeup_tick;
+
+
+		while (look_sleep_elem!=list_end(&sleep_list))
+		{
+			look_sleep_elem=list_next(look_sleep_elem);
+			check_thread=
+			list_entry (look_sleep_elem, struct thread, elem);
+
+			if (next_tick_to_awake>check_thread->wakeup_tick)
+				next_tick_to_awake=check_thread->wakeup_tick;
+		}
+
+	}
+
+}
+
+// 다음 깨워야 할 틱의 값을 반환
+int64_t get_next_tick_to_awake(void){
+	if (next_tick_to_awake!=NULL)
+		return next_tick_to_awake;
+	else
+		return NULL;
+}
+
+
 
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
