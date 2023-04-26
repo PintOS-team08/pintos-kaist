@@ -42,6 +42,7 @@ static struct lock tid_lock;
 /* Thread destruction requests */
 static struct list destruction_req;
 
+
 /* Statistics. */
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
@@ -210,6 +211,33 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
+	// struct thread *curr=thread_current();
+
+	// if (t->priority>curr->priority){
+	// 	thread_yield();
+	// }
+
+
+	struct thread *curr=thread_current();
+
+	struct lock *lock_=aux;
+
+	if (t->priority>curr->priority){
+
+		if(lock_!=NULL){
+			if (lock_->holder ==NULL){
+				thread_yield();	
+			}
+			else if (lock_->holder !=NULL){
+				thread_set_priority(t->priority);
+				thread_yield();	
+			}
+		}
+		else if(lock_==NULL){
+			thread_yield();
+		}
+	}
+
 	return tid;
 }
 
@@ -243,7 +271,9 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+
+    list_insert_ordered(&ready_list, &t->elem, &more_by_priority, NULL);
+    
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -306,7 +336,8 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, &more_by_priority, NULL);
+		
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -314,9 +345,35 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
+
+	
+	// struct list_elem elem_pre_priority;
+
+	// if (lock_->holder!=NULL){
+	// 	elem_pre_priority.priority=thread_current ()->priority;
+	// 	list_insert_ordered(&curr->prelog_priority, &elem_pre_priority, &more_by_priority, NULL);
+
+	// 	printf("!!!!!!!! pre priority %d\n", list_begin(&curr->prelog_priority)->priority);
+	// }
+	
 	thread_current ()->priority = new_priority;
+
+	test_max_priority();
 }
 
+// 현재 스레드와 준비리스트의 스레드 우선순위를 비교하여 선점
+void test_max_priority(void){
+	struct thread *curr=thread_current();
+
+	if (!list_empty(&ready_list)){
+		struct thread *ready_front=list_entry(list_begin(&ready_list), struct thread, elem);
+
+		if (ready_front->priority>curr->priority)
+			thread_yield();
+	
+	}
+	
+}
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) {
@@ -596,6 +653,15 @@ bool less_by_wake_time(const struct list_elem *a, const struct list_elem *b, voi
 	struct thread *thread_a = list_entry(a, struct thread, elem);
 	struct thread *thread_b = list_entry(b, struct thread, elem);
 	return thread_a->wake_time < thread_b->wake_time;
+}
+
+// 스레드 a, b의 priority 비교
+bool more_by_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+	struct thread *thread_a = list_entry(a, struct thread, elem);
+	struct thread *thread_b = list_entry(b, struct thread, elem);
+
+	// printf("##### Ta priority: %d\n", thread_a->priority);
+	return thread_a->priority > thread_b->priority;
 }
 
 
