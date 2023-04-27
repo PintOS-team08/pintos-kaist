@@ -113,6 +113,7 @@ thread_init (void) {
 	list_init (&ready_list);
 	list_init (&sleep_list);
 	list_init (&destruction_req);
+	
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -211,32 +212,7 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
-	// struct thread *curr=thread_current();
-
-	// if (t->priority>curr->priority){
-	// 	thread_yield();
-	// }
-
-
-	struct thread *curr=thread_current();
-
-	struct lock *lock_=aux;
-
-	if (t->priority>curr->priority){
-
-		if(lock_!=NULL){
-			if (lock_->holder ==NULL){
-				thread_yield();	
-			}
-			else if (lock_->holder !=NULL){
-				thread_set_priority(t->priority);
-				thread_yield();	
-			}
-		}
-		else if(lock_==NULL){
-			thread_yield();
-		}
-	}
+	test_max_priority();
 
 	return tid;
 }
@@ -275,6 +251,7 @@ thread_unblock (struct thread *t) {
     list_insert_ordered(&ready_list, &t->elem, &more_by_priority, NULL);
     
 	t->status = THREAD_READY;
+	
 	intr_set_level (old_level);
 }
 
@@ -345,18 +322,10 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-
 	
-	// struct list_elem elem_pre_priority;
+	thread_current ()->init_priority = new_priority;
 
-	// if (lock_->holder!=NULL){
-	// 	elem_pre_priority.priority=thread_current ()->priority;
-	// 	list_insert_ordered(&curr->prelog_priority, &elem_pre_priority, &more_by_priority, NULL);
-
-	// 	printf("!!!!!!!! pre priority %d\n", list_begin(&curr->prelog_priority)->priority);
-	// }
-	
-	thread_current ()->priority = new_priority;
+	refresh_priority();
 
 	test_max_priority();
 }
@@ -372,7 +341,7 @@ void test_max_priority(void){
 			thread_yield();
 	
 	}
-	
+
 }
 /* Returns the current thread's priority. */
 int
@@ -469,6 +438,10 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	t->wait_on_lock=NULL;
+	t->init_priority=priority;
+	list_init(&t->donation);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -708,4 +681,43 @@ void thread_wake(int64_t ticks) {
     }
 
     intr_set_level(old_level);
+}
+
+void donate_priority(void){
+	struct thread *curr =thread_current();
+	
+	while (curr->wait_on_lock!=NULL){
+		struct thread *receive_thread=curr->wait_on_lock->holder;
+		struct list_elem *e;
+		receive_thread->priority=curr->priority;
+		curr=receive_thread;
+	}
+	
+}
+
+void remove_with_lock(struct lock *lock){
+
+	struct thread *curr=thread_current();
+	struct list_elem *e;
+	
+	for (e = list_begin(&curr->donation); e != list_end(&curr->donation); e = list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, donation_elem);
+		if (t->wait_on_lock == lock)
+			list_remove(&t->donation_elem);
+	}
+
+}
+
+void refresh_priority(void){
+
+	struct thread *curr=thread_current();
+
+	if (!list_empty(&curr->donation))
+	{
+		list_sort(&curr->donation, more_by_priority, NULL);
+		curr->priority=list_entry(list_begin(&curr->donation), struct thread, donation_elem)->priority;
+	}
+	else
+		curr->priority=curr->init_priority;
+
 }

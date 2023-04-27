@@ -94,7 +94,10 @@ struct thread {
 	int64_t wake_time;
 
 	// 우선순위를 기부 받았을 때, 이전 우선순위 기록 
-	// struct list prelog_priority;
+	int init_priority;
+	struct lock *wait_on_lock;
+	struct list donation;
+	struct list_elem donation_elem;
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
@@ -151,7 +154,10 @@ void thread_sleep(int64_t start, int64_t ticks);
 void thread_wake(int64_t ticks);
 bool less_by_wake_time(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 bool more_by_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-
 void test_max_priority(void);
+
+void donate_priority(void);
+void remove_with_lock(struct lock *lock);
+void regresh_priotity(void);
 
 #endif /* threads/thread.h */
